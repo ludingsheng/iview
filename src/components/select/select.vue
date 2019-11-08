@@ -258,7 +258,7 @@
             this.$on('on-select-selected', this.onOptionClick);
 
             // set the initial values if there are any
-            if (!this.remote && this.selectOptions.length > 0){
+            if ( this.selectOptions.length > 0){
                 this.values = this.getInitialValue().map(value => {
                     if (typeof value !== 'number' && !value) return null;
                     return this.getOptionData(value);
@@ -437,12 +437,14 @@
                 if (query === null) {
                     this.onQueryChange('');
                     this.values = [];
+                    // #5620,修复清空搜索关键词后，重新搜索相同的关键词没有触发远程搜索
+                    this.lastRemoteQuery = '';
                 }
             },
             clearSingleSelect(){ // PUBLIC API
-                this.$emit('on-clear');
                 this.hideMenu();
                 if (this.clearable) this.reset();
+                this.$emit('on-clear'); // #6331
             },
             getOptionData(value){
                 const option = this.flatOptions.find(({componentOptions}) => componentOptions.propsData.value === value);
@@ -488,15 +490,19 @@
             },
 
             validateOption({children, elm, propsData}){
-                const value = propsData.value;
                 const label = propsData.label || '';
                 const textContent = (elm && elm.textContent) || (children || []).reduce((str, node) => {
                     const nodeText = node.elm ? node.elm.textContent : node.text;
                     return `${str} ${nodeText}`;
                 }, '') || '';
-                const stringValues = JSON.stringify([value, label, textContent]);
+                const stringValues = [label, textContent];
                 const query = this.query.toLowerCase().trim();
-                return stringValues.toLowerCase().includes(query);
+                for (let i = 0; i < stringValues.length; ++i) {
+                    if (stringValues[i].toLowerCase().includes(query)) {
+                        return true;
+                    }
+                }
+                return false;
             },
 
             toggleMenu (e, force) {
@@ -542,6 +548,7 @@
                     event.preventDefault();
                     this.hideMenu();
                     this.isFocused = true;
+                    this.$emit('on-clickoutside', event);
                 } else {
                     this.caretPosition = -1;
                     this.isFocused = false;
@@ -555,31 +562,32 @@
                 this.filterQueryChange = false;
             },
             handleKeydown (e) {
-                if (e.key === 'Backspace'){
+                const key = e.key || e.code;
+                if ( key === 'Backspace'){
                     return; // so we don't call preventDefault
                 }
 
                 if (this.visible) {
                     e.preventDefault();
-                    if (e.key === 'Tab'){
+                    if ( key === 'Tab'){
                         e.stopPropagation();
                     }
 
                     // Esc slide-up
-                    if (e.key === 'Escape') {
+                    if ( key === 'Escape') {
                         e.stopPropagation();
                         this.hideMenu();
                     }
                     // next
-                    if (e.key === 'ArrowUp') {
+                    if ( key === 'ArrowUp') {
                         this.navigateOptions(-1);
                     }
                     // prev
-                    if (e.key === 'ArrowDown') {
+                    if ( key === 'ArrowDown') {
                         this.navigateOptions(1);
                     }
                     // enter
-                    if (e.key === 'Enter') {
+                    if ( key === 'Enter') {
                         if (this.focusIndex === -1) return this.hideMenu();
                         const optionComponent = this.flatOptions[this.focusIndex];
 
@@ -658,6 +666,7 @@
                     if (!this.autoComplete) this.$nextTick(() => inputField.focus());
                 }
                 this.broadcast('Drop', 'on-update-popper');
+                this.$emit('on-select', this.publicValue); // # 4441
                 setTimeout(() => {
                     this.filterQueryChange = false;
                 }, ANIMATION_TIMEOUT);
@@ -706,7 +715,7 @@
                 if (value === '') this.values = [];
                 else if (checkValuesNotEqual(value,publicValue,values)) {
                     this.$nextTick(() => this.values = getInitialValue().map(getOptionData).filter(Boolean));
-                    this.dispatch('FormItem', 'on-form-change', this.publicValue);
+                    if (!this.multiple) this.dispatch('FormItem', 'on-form-change', this.publicValue);
                 }
             },
             values(now, before){
